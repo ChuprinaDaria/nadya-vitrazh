@@ -12,9 +12,10 @@ yolov8*.pt
 *.task
 materials/*.zip
 materials/*.jpg
-materials/*.png
 materials/*.pdf
 materials/матеріали*/
+materials/*/pos*.svg
+materials/png/*/seq/
 vitrazh/dashboard/static/plans/*.png
 .env
 CLAUDE.md
