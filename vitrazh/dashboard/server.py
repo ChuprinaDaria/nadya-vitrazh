@@ -25,11 +25,14 @@ def create_app(config: Config) -> FastAPI:
     clients: list[WebSocket] = []
     loop: asyncio.AbstractEventLoop | None = None
 
+    motor_mode = config.motor.type  # "mock" = prototype, "gpio"/"serial" = production
+
     def on_update(state: InstallationState, pose: PoseClass, person_present: bool) -> None:
         msg = json.dumps({
             "state": state.value,
             "pose": pose.value,
             "person_present": person_present,
+            "mode": "prototype" if motor_mode == "mock" else "production",
         })
         if loop is not None:
             asyncio.run_coroutine_threadsafe(_broadcast(msg), loop)
@@ -75,6 +78,7 @@ def create_app(config: Config) -> FastAPI:
                 "state": pipeline.state.value,
                 "pose": "idle",
                 "person_present": False,
+                "mode": "prototype" if motor_mode == "mock" else "production",
             }))
             while True:
                 await ws.receive_text()

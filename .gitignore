@@ -15,5 +15,6 @@ materials/*.jpg
 materials/*.png
 materials/*.pdf
 materials/матеріали*/
+vitrazh/dashboard/static/plans/*.png
 .env
 CLAUDE.md

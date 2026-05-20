@@ -7,88 +7,159 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', system-ui, sans-serif; }
-        .glass-rotating { animation: spin 3s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .glass-assembled { animation: none; transform: rotate(0deg); }
+
+        /* Vitrazh pieces — individual rotation */
+        .vitrazh-container { position: relative; width: 280px; height: 280px; }
+        .vitrazh-piece {
+            position: absolute;
+            transform-origin: center center;
+            transition: transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.8s ease;
+        }
+        .vitrazh-piece.rotating {
+            animation: piece-spin var(--spin-duration, 3s) linear infinite;
+            animation-direction: var(--spin-dir, normal);
+        }
+        .vitrazh-piece.assembled {
+            animation: none;
+            transform: rotate(0deg) translate(0, 0);
+            opacity: 1;
+        }
+        @keyframes piece-spin {
+            from { transform: rotate(0deg) translate(var(--offset-x, 0), var(--offset-y, 0)); }
+            to { transform: rotate(360deg) translate(var(--offset-x, 0), var(--offset-y, 0)); }
+        }
+
         .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
         .status-rotating { background: #f59e0b; animation: pulse 1.5s ease-in-out infinite; }
         .status-assembled { background: #10b981; }
         .status-assembling { background: #3b82f6; animation: pulse 0.5s ease-in-out infinite; }
         .status-disassembling { background: #ef4444; animation: pulse 0.5s ease-in-out infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Plan tabs */
+        .plan-tab { cursor: pointer; padding: 0.5rem 1rem; border-radius: 0.5rem; }
+        .plan-tab.active { background: #374151; color: white; }
+        .plan-tab:not(.active) { color: #9ca3af; }
+        .plan-tab:hover:not(.active) { color: #d1d5db; }
+
+        /* Lightbox */
+        .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 50; }
+        .lightbox.open { display: flex; align-items: center; justify-content: center; }
+        .lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
+
+        /* Mode badge */
+        .mode-badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .mode-prototype { background: #7c3aed; color: white; }
+        .mode-production { background: #059669; color: white; }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <header class="mb-8">
-            <h1 class="text-3xl font-bold">Вітражний павільйон</h1>
-            <p class="text-gray-400 mt-1">Інтерактивна арт-інсталяція — панель керування</p>
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <header class="mb-8 flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold">Вітражний павільйон</h1>
+                <p class="text-gray-400 mt-1">Інтерактивна арт-інсталяція</p>
+            </div>
+            <span id="modeBadge" class="mode-badge mode-prototype">ПРОТОТИП</span>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Status card -->
-            <div class="bg-gray-800 rounded-xl p-6">
-                <h2 class="text-lg font-semibold mb-4">Стан інсталяції</h2>
-                <div class="flex items-center gap-3 mb-4">
-                    <span id="statusDot" class="status-dot status-rotating"></span>
-                    <span id="statusText" class="text-2xl font-bold">Обертання</span>
-                </div>
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <span class="text-gray-400">Людина:</span>
-                        <span id="personStatus" class="ml-2 font-medium">Не виявлено</span>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left column: status + vitrazh -->
+            <div class="space-y-6">
+                <!-- Status card -->
+                <div class="bg-gray-800 rounded-xl p-6">
+                    <h2 class="text-lg font-semibold mb-4">Стан інсталяції</h2>
+                    <div class="flex items-center gap-3 mb-4">
+                        <span id="statusDot" class="status-dot status-rotating"></span>
+                        <span id="statusText" class="text-2xl font-bold">Обертання</span>
                     </div>
-                    <div>
-                        <span class="text-gray-400">Поза:</span>
-                        <span id="poseStatus" class="ml-2 font-medium">—</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Vitrazh visualization -->
-            <div class="bg-gray-800 rounded-xl p-6 flex items-center justify-center">
-                <div id="vitrazh" class="glass-rotating">
-                    <svg width="200" height="200" viewBox="0 0 200 200">
-                        <polygon points="100,10 40,80 70,80" fill="#e74c3c" opacity="0.8"/>
-                        <polygon points="100,10 160,80 130,80" fill="#3498db" opacity="0.8"/>
-                        <polygon points="40,80 70,80 55,150" fill="#2ecc71" opacity="0.8"/>
-                        <polygon points="130,80 160,80 145,150" fill="#f1c40f" opacity="0.8"/>
-                        <polygon points="70,80 130,80 120,150 80,150" fill="#9b59b6" opacity="0.8"/>
-                        <polygon points="55,150 80,150 67,190" fill="#e67e22" opacity="0.8"/>
-                        <polygon points="120,150 145,150 133,190" fill="#1abc9c" opacity="0.8"/>
-                        <polygon points="67,190 133,190 100,190 80,150 120,150" fill="#e91e63" opacity="0.6"/>
-                    </svg>
-                </div>
-            </div>
-
-            <!-- Plans section -->
-            <div class="bg-gray-800 rounded-xl p-6 md:col-span-2">
-                <h2 class="text-lg font-semibold mb-4">Плани павільйону</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="bg-gray-700 rounded-lg p-4">
-                        <h3 class="text-sm text-gray-400 mb-2">План камер з розмірами</h3>
-                        <div class="aspect-video bg-gray-600 rounded flex items-center justify-center text-gray-400">
-                            <span>PDF: план камер з розмірами.pdf</span>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Людина</span>
+                            <span id="personStatus" class="font-medium text-gray-400">Не виявлено</span>
                         </div>
-                    </div>
-                    <div class="bg-gray-700 rounded-lg p-4">
-                        <h3 class="text-sm text-gray-400 mb-2">План павільйону</h3>
-                        <div class="aspect-video bg-gray-600 rounded flex items-center justify-center text-gray-400">
-                            <span>PDF: план павільйону з розмірами та площею.pdf</span>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Поза</span>
+                            <span id="poseStatus" class="font-medium">—</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Режим</span>
+                            <span id="modeText" class="font-medium text-purple-400">Прототип (mock)</span>
                         </div>
                     </div>
                 </div>
-                <p class="text-xs text-gray-500 mt-3">Завантажте PDF-плани в /materials/плани/ для відображення</p>
+
+                <!-- Vitrazh visualization -->
+                <div class="bg-gray-800 rounded-xl p-6">
+                    <h2 class="text-lg font-semibold mb-4 text-center">Вітраж</h2>
+                    <div class="flex items-center justify-center">
+                        <div class="vitrazh-container">
+                            <svg width="280" height="280" viewBox="0 0 280 280">
+                                <!-- 6 stained glass pieces on spindles -->
+                                <g class="vitrazh-piece rotating" style="--spin-duration:4s; --offset-x:5px; --offset-y:3px;" data-piece="1">
+                                    <polygon points="140,20 80,100 110,100" fill="#e74c3c" opacity="0.85"/>
+                                    <polygon points="140,20 110,100 140,80" fill="#c0392b" opacity="0.7"/>
+                                </g>
+                                <g class="vitrazh-piece rotating" style="--spin-duration:3.5s; --spin-dir:reverse; --offset-x:-4px; --offset-y:2px;" data-piece="2">
+                                    <polygon points="140,20 200,100 170,100" fill="#3498db" opacity="0.85"/>
+                                    <polygon points="140,20 170,100 140,80" fill="#2980b9" opacity="0.7"/>
+                                </g>
+                                <g class="vitrazh-piece rotating" style="--spin-duration:5s; --offset-x:3px; --offset-y:-4px;" data-piece="3">
+                                    <polygon points="80,100 110,100 90,180" fill="#2ecc71" opacity="0.85"/>
+                                    <polygon points="110,100 140,80 110,180 90,180" fill="#27ae60" opacity="0.7"/>
+                                </g>
+                                <g class="vitrazh-piece rotating" style="--spin-duration:3.8s; --spin-dir:reverse; --offset-x:-3px; --offset-y:-3px;" data-piece="4">
+                                    <polygon points="170,100 200,100 190,180" fill="#f1c40f" opacity="0.85"/>
+                                    <polygon points="170,100 140,80 170,180 190,180" fill="#f39c12" opacity="0.7"/>
+                                </g>
+                                <g class="vitrazh-piece rotating" style="--spin-duration:4.5s; --offset-x:2px; --offset-y:5px;" data-piece="5">
+                                    <polygon points="90,180 110,180 100,250" fill="#e67e22" opacity="0.85"/>
+                                    <polygon points="110,180 140,180 120,250 100,250" fill="#9b59b6" opacity="0.7"/>
+                                </g>
+                                <g class="vitrazh-piece rotating" style="--spin-duration:3.2s; --spin-dir:reverse; --offset-x:-5px; --offset-y:4px;" data-piece="6">
+                                    <polygon points="170,180 190,180 180,250" fill="#1abc9c" opacity="0.85"/>
+                                    <polygon points="140,180 170,180 160,250 140,250" fill="#e91e63" opacity="0.7"/>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Event log -->
-            <div class="bg-gray-800 rounded-xl p-6 md:col-span-2">
-                <h2 class="text-lg font-semibold mb-4">Журнал подій</h2>
-                <div id="eventLog" class="space-y-1 max-h-48 overflow-y-auto text-sm font-mono text-gray-300">
-                    <div class="text-gray-500">Очікування підключення...</div>
+            <!-- Right column: plans + log -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Plans section -->
+                <div class="bg-gray-800 rounded-xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Плани павільйону</h2>
+                        <div class="flex gap-1" id="planTabs">
+                            <button class="plan-tab active" data-plan="cameras">Камери</button>
+                            <button class="plan-tab" data-plan="pavilion">Павільйон</button>
+                            <button class="plan-tab" data-plan="cameras_clean">Камери (чистий)</button>
+                            <button class="plan-tab" data-plan="pavilion_clean">Павільйон (чистий)</button>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <img id="planImage" src="/static/plans/plan_cameras.png" alt="План камер"
+                             class="w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                             onclick="openLightbox(this.src)">
+                    </div>
+                </div>
+
+                <!-- Event log -->
+                <div class="bg-gray-800 rounded-xl p-6">
+                    <h2 class="text-lg font-semibold mb-4">Журнал подій</h2>
+                    <div id="eventLog" class="space-y-1 max-h-56 overflow-y-auto text-sm font-mono text-gray-300">
+                        <div class="text-gray-500">Очікування підключення...</div>
+                    </div>
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Lightbox for plan zoom -->
+    <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+        <img id="lightboxImg" src="" alt="План збільшений">
     </div>
 
     <script>
@@ -103,14 +174,40 @@
             photographing: 'Фотографує',
             phone_viewing: 'Дивиться в телефон',
         };
+        const PLAN_MAP = {
+            cameras: '/static/plans/plan_cameras.png',
+            pavilion: '/static/plans/plan_pavilion.png',
+            cameras_clean: '/static/plans/plan_cameras_clean.png',
+            pavilion_clean: '/static/plans/plan_pavilion_clean.png',
+        };
 
+        // Plan tabs
+        document.querySelectorAll('.plan-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.plan-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('planImage').src = PLAN_MAP[tab.dataset.plan];
+            });
+        });
+
+        // Lightbox
+        function openLightbox(src) {
+            document.getElementById('lightboxImg').src = src;
+            document.getElementById('lightbox').classList.add('open');
+        }
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('open');
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+        // WebSocket
         const ws = new WebSocket(`ws://${location.host}/ws`);
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const personStatus = document.getElementById('personStatus');
         const poseStatus = document.getElementById('poseStatus');
-        const vitrazh = document.getElementById('vitrazh');
         const eventLog = document.getElementById('eventLog');
+        const pieces = document.querySelectorAll('.vitrazh-piece');
 
         let lastState = null;
 
@@ -120,23 +217,39 @@
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
-            // Update status
+            // Update status panel
             statusDot.className = `status-dot status-${data.state}`;
             statusText.textContent = STATE_UA[data.state] || data.state;
-            personStatus.textContent = data.person_present ? 'Виявлено ✓' : 'Не виявлено';
-            personStatus.className = `ml-2 font-medium ${data.person_present ? 'text-green-400' : 'text-gray-400'}`;
+            personStatus.textContent = data.person_present ? 'Виявлено' : 'Не виявлено';
+            personStatus.className = `font-medium ${data.person_present ? 'text-green-400' : 'text-gray-400'}`;
             poseStatus.textContent = POSE_UA[data.pose] || data.pose;
 
-            // Animate vitrazh
-            if (data.state === 'rotating' || data.state === 'disassembling') {
-                vitrazh.className = 'glass-rotating';
-            } else {
-                vitrazh.className = 'glass-assembled';
+            // Animate vitrazh pieces
+            pieces.forEach(p => {
+                if (data.state === 'rotating' || data.state === 'disassembling') {
+                    p.classList.remove('assembled');
+                    p.classList.add('rotating');
+                } else {
+                    p.classList.remove('rotating');
+                    p.classList.add('assembled');
+                }
+            });
+
+            // Mode indicator
+            if (data.mode) {
+                const badge = document.getElementById('modeBadge');
+                const modeText = document.getElementById('modeText');
+                if (data.mode === 'production') {
+                    badge.className = 'mode-badge mode-production';
+                    badge.textContent = 'PRODUCTION';
+                    modeText.textContent = 'Production (GPIO)';
+                    modeText.className = 'font-medium text-green-400';
+                }
             }
 
             // Log state changes
             if (lastState !== null && lastState !== data.state) {
-                addLog(`${STATE_UA[lastState]} → ${STATE_UA[data.state]}`);
+                addLog(`${STATE_UA[lastState]} \u2192 ${STATE_UA[data.state]}`);
             }
             lastState = data.state;
         };
