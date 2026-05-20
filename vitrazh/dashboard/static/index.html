@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вітраж — Панель керування</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .glass-rotating { animation: spin 3s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .glass-assembled { animation: none; transform: rotate(0deg); }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+        .status-rotating { background: #f59e0b; animation: pulse 1.5s ease-in-out infinite; }
+        .status-assembled { background: #10b981; }
+        .status-assembling { background: #3b82f6; animation: pulse 0.5s ease-in-out infinite; }
+        .status-disassembling { background: #ef4444; animation: pulse 0.5s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold">Вітражний павільйон</h1>
+            <p class="text-gray-400 mt-1">Інтерактивна арт-інсталяція — панель керування</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Status card -->
+            <div class="bg-gray-800 rounded-xl p-6">
+                <h2 class="text-lg font-semibold mb-4">Стан інсталяції</h2>
+                <div class="flex items-center gap-3 mb-4">
+                    <span id="statusDot" class="status-dot status-rotating"></span>
+                    <span id="statusText" class="text-2xl font-bold">Обертання</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-400">Людина:</span>
+                        <span id="personStatus" class="ml-2 font-medium">Не виявлено</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-400">Поза:</span>
+                        <span id="poseStatus" class="ml-2 font-medium">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Vitrazh visualization -->
+            <div class="bg-gray-800 rounded-xl p-6 flex items-center justify-center">
+                <div id="vitrazh" class="glass-rotating">
+                    <svg width="200" height="200" viewBox="0 0 200 200">
+                        <polygon points="100,10 40,80 70,80" fill="#e74c3c" opacity="0.8"/>
+                        <polygon points="100,10 160,80 130,80" fill="#3498db" opacity="0.8"/>
+                        <polygon points="40,80 70,80 55,150" fill="#2ecc71" opacity="0.8"/>
+                        <polygon points="130,80 160,80 145,150" fill="#f1c40f" opacity="0.8"/>
+                        <polygon points="70,80 130,80 120,150 80,150" fill="#9b59b6" opacity="0.8"/>
+                        <polygon points="55,150 80,150 67,190" fill="#e67e22" opacity="0.8"/>
+                        <polygon points="120,150 145,150 133,190" fill="#1abc9c" opacity="0.8"/>
+                        <polygon points="67,190 133,190 100,190 80,150 120,150" fill="#e91e63" opacity="0.6"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Plans section -->
+            <div class="bg-gray-800 rounded-xl p-6 md:col-span-2">
+                <h2 class="text-lg font-semibold mb-4">Плани павільйону</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-gray-700 rounded-lg p-4">
+                        <h3 class="text-sm text-gray-400 mb-2">План камер з розмірами</h3>
+                        <div class="aspect-video bg-gray-600 rounded flex items-center justify-center text-gray-400">
+                            <span>PDF: план камер з розмірами.pdf</span>
+                        </div>
+                    </div>
+                    <div class="bg-gray-700 rounded-lg p-4">
+                        <h3 class="text-sm text-gray-400 mb-2">План павільйону</h3>
+                        <div class="aspect-video bg-gray-600 rounded flex items-center justify-center text-gray-400">
+                            <span>PDF: план павільйону з розмірами та площею.pdf</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-3">Завантажте PDF-плани в /materials/плани/ для відображення</p>
+            </div>
+
+            <!-- Event log -->
+            <div class="bg-gray-800 rounded-xl p-6 md:col-span-2">
+                <h2 class="text-lg font-semibold mb-4">Журнал подій</h2>
+                <div id="eventLog" class="space-y-1 max-h-48 overflow-y-auto text-sm font-mono text-gray-300">
+                    <div class="text-gray-500">Очікування підключення...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const STATE_UA = {
+            rotating: 'Обертання',
+            assembling: 'Збирається',
+            assembled: 'Зібрано',
+            disassembling: 'Розбирається',
+        };
+        const POSE_UA = {
+            idle: 'Спокій',
+            photographing: 'Фотографує',
+            phone_viewing: 'Дивиться в телефон',
+        };
+
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const personStatus = document.getElementById('personStatus');
+        const poseStatus = document.getElementById('poseStatus');
+        const vitrazh = document.getElementById('vitrazh');
+        const eventLog = document.getElementById('eventLog');
+
+        let lastState = null;
+
+        ws.onopen = () => addLog('Підключено до сервера');
+        ws.onclose = () => addLog('Відключено від сервера');
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            // Update status
+            statusDot.className = `status-dot status-${data.state}`;
+            statusText.textContent = STATE_UA[data.state] || data.state;
+            personStatus.textContent = data.person_present ? 'Виявлено ✓' : 'Не виявлено';
+            personStatus.className = `ml-2 font-medium ${data.person_present ? 'text-green-400' : 'text-gray-400'}`;
+            poseStatus.textContent = POSE_UA[data.pose] || data.pose;
+
+            // Animate vitrazh
+            if (data.state === 'rotating' || data.state === 'disassembling') {
+                vitrazh.className = 'glass-rotating';
+            } else {
+                vitrazh.className = 'glass-assembled';
+            }
+
+            // Log state changes
+            if (lastState !== null && lastState !== data.state) {
+                addLog(`${STATE_UA[lastState]} → ${STATE_UA[data.state]}`);
+            }
+            lastState = data.state;
+        };
+
+        function addLog(msg) {
+            const div = document.createElement('div');
+            const time = new Date().toLocaleTimeString('uk-UA');
+            div.textContent = `[${time}] ${msg}`;
+            eventLog.prepend(div);
+            if (eventLog.children.length > 100) {
+                eventLog.removeChild(eventLog.lastChild);
+            }
+        }
+    </script>
+</body>
+</html>

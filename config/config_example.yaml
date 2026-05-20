@@ -1,0 +1,45 @@
+camera:
+  source: 0  # 0 = webcam, or RTSP URL, or path to video file
+  camera_id: "pavilion_cam1"
+  fps_limit: 15
+
+detection:
+  model: "yolov8n.pt"
+  confidence: 0.5
+  device: "auto"  # auto / cpu / cuda:0
+
+pose:
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+
+# Pose classifier thresholds
+classifier:
+  # Angle thresholds for "photographing" pose (degrees)
+  elbow_angle_min: 30
+  elbow_angle_max: 150
+  # Wrist-to-face distance threshold (normalized)
+  phone_distance_threshold: 0.15
+  # Minimum confidence to classify pose
+  min_pose_confidence: 0.6
+
+# State machine
+state_machine:
+  # Seconds person must be present before glass assembles
+  presence_delay: 2.0
+  # Seconds after person leaves before glass starts rotating
+  absence_delay: 3.0
+  # If person takes photo pose, resume rotation after this delay
+  photo_resume_delay: 1.5
+
+# Motor control
+motor:
+  type: "mock"  # mock / gpio / serial
+  # GPIO pins for each stained glass position (RPi)
+  # pins: [17, 18, 27, 22, 23, 24]
+  # Serial port for Arduino
+  # serial_port: "/dev/ttyUSB0"
+  # serial_baud: 9600
+
+dashboard:
+  host: "127.0.0.1"
+  port: 8000
