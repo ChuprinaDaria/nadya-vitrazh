@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VITRAZH — CONTRA SOLITUDINEM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#050505;color:#999;font-family:'SF Mono','Fira Code',Consolas,monospace;overflow:hidden;height:100vh}
+
+.frame{display:flex;flex-direction:column;height:100vh;border:1px solid #1a1a1a}
+.header{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:8px 20px;border-bottom:1px solid #1a1a1a;background:#0a0a0a;
+}
+.header-title{font-size:10px;letter-spacing:.25em;text-transform:uppercase;color:#444}
+
+.content{display:flex;flex:1;overflow:hidden}
+.panel{flex:1;position:relative;overflow:hidden;border:1px solid #111}
+.panel-label{
+    position:absolute;top:0;left:0;right:0;
+    padding:4px 10px;background:#0a0a0acc;
+    font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#333;
+    z-index:15;display:flex;justify-content:space-between;
+}
+.divider{width:1px;background:#1a1a1a}
+
+.footer{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:12px 24px;border-top:1px solid #1a1a1a;background:#0a0a0a;
+}
+.footer-lat{
+    font-family:Georgia,'Times New Roman',serif;
+    font-size:18px;letter-spacing:.3em;color:#555;font-variant:small-caps;
+}
+.footer-desc{font-size:10px;letter-spacing:.12em;color:#333;margin-top:2px}
+.footer-de{font-size:9px;letter-spacing:.1em;color:#2a2a2a}
+
+/* Left: 3D body */
+#bodyContainer{width:100%;height:100%;position:relative}
+#bodyContainer canvas{display:block;width:100%;height:100%}
+
+/* Right: 3D */
+#threeContainer{width:100%;height:100%}
+#threeContainer canvas{display:block}
+
+.ov{position:absolute;pointer-events:none;z-index:10}
+.ov-tr{top:24px;right:10px}
+.ov-bl{bottom:10px;left:10px}
+
+.lbl{font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#2a2a2a}
+.val{font-size:10px;color:#555}
+
+.sdot{width:5px;height:5px;border-radius:50%;display:inline-block;margin-right:4px}
+.dot-spinning{background:#2a2a2a;animation:pls 3s ease-in-out infinite}
+.dot-teasing{background:#b8860b;animation:pls 2s ease-in-out infinite}
+.dot-pursuit{background:#a83232;animation:pls .35s ease-in-out infinite}
+.dot-assembling{background:#2471a3;animation:pls .7s ease-in-out infinite}
+.dot-assembled{background:#1e8449}
+@keyframes pls{0%,100%{opacity:1}50%{opacity:.2}}
+
+.pcnt{font-size:32px;font-weight:100;color:#1a1a1a;line-height:1}
+.pcnt.on{color:#22c55e}
+
+.tmr{font-size:16px;font-weight:100;color:#333}
+.tmr.on{color:#b8860b}
+
+.conn{font-size:7px;letter-spacing:.08em;padding:1px 5px;border-radius:2px}
+.conn-live{color:#22c55e;background:#22c55e11}
+.conn-off{color:#555;background:#55555511}
+</style>
+</head>
+<body>
+<div class="frame">
+
+<div class="header">
+    <div class="header-title">vitrazh &mdash; interactive glass installation</div>
+    <div style="display:flex;gap:16px;align-items:center">
+        <div style="display:flex;align-items:center;gap:4px">
+            <span class="sdot dot-spinning" id="statusDot"></span>
+            <span style="font-size:9px;color:#555" id="statusText">spinning</span>
+        </div>
+        <div class="tmr" id="timer"></div>
+        <div id="connStatus" class="conn conn-off">connecting</div>
+    </div>
+</div>
+
+<div class="content">
+
+<!-- LEFT: 3D Capsule Body from detection data -->
+<div class="panel" id="leftPanel">
+    <div class="panel-label"><span>detection / mediapipe</span><span id="detFps"></span></div>
+    <div id="bodyContainer"></div>
+    <div class="ov ov-tr">
+        <div class="pcnt" id="personCount">0</div>
+        <div class="lbl" style="text-align:right">persons</div>
+    </div>
+    <div class="ov ov-bl">
+        <div class="lbl">sector &alpha;</div>
+        <div class="val" id="stateLabel">spinning</div>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- RIGHT: 3D -->
+<div class="panel" id="rightPanel">
+    <div class="panel-label"><span>3d model / vitrazh scene</span><span id="panelInfo"></span></div>
+    <div id="threeContainer"></div>
+</div>
+
+</div>
+
+<div class="footer">
+    <div>
+        <div class="footer-lat">contra solitudinem</div>
+        <div class="footer-desc">the painting cannot assemble for one &mdash; bring a friend</div>
+    </div>
+    <div class="footer-de">Widerstand gegen die Einsamkeit</div>
+</div>
+
+</div>
+
+<script type="importmap">
+{"imports":{
+    "three":"https://unpkg.com/three@0.166.0/build/three.module.js",
+    "three/addons/":"https://unpkg.com/three@0.166.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ── state ──────────────────────────────────────────────────
+let state = 'spinning', nPersons = 0, pursuitT = 0;
+const PURSUIT_DUR = 30;
+const vitrazPanels = [];
+
+// ── detection data from server ─────────────────────────────
+let detections = [];  // [{bbox:{x,y,w,h}, tracking_id, confidence}]
+let landmarks = null; // [[x,y,vis], ...] or null
+
+// ── 3D body renderer (left panel) ──────────────────────────
+const bodyContainer = document.getElementById('bodyContainer');
+const bodyScene = new THREE.Scene();
+bodyScene.background = new THREE.Color(0x030303);
+
+const bodyCam = new THREE.PerspectiveCamera(50, 1, 0.1, 50);
+bodyCam.position.set(0, 0, 2.8);
+bodyCam.lookAt(0, 0, 0);
+
+const bodyRen = new THREE.WebGLRenderer({antialias:true});
+bodyRen.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+bodyContainer.appendChild(bodyRen.domElement);
+
+// Body lighting — soft green-tinted
+bodyScene.add(new THREE.AmbientLight(0x224422, 0.6));
+const bodyKeyLight = new THREE.DirectionalLight(0x88ffaa, 2.0);
+bodyKeyLight.position.set(1, 2, 3);
+bodyScene.add(bodyKeyLight);
+const bodyFillLight = new THREE.DirectionalLight(0x225533, 0.8);
+bodyFillLight.position.set(-1, 0, 1);
+bodyScene.add(bodyFillLight);
+
+// Material — green glow per spec
+const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x22c55e,
+    emissive: 0x0a3d1a,
+    emissiveIntensity: 0.5,
+    roughness: 0.7,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.85,
+});
+const jointMat = new THREE.MeshStandardMaterial({
+    color: 0x4ade80,
+    emissive: 0x22c55e,
+    emissiveIntensity: 0.8,
+    roughness: 0.5,
+    metalness: 0.0,
+});
+
+// Body group
+const bodyGroup = new THREE.Group();
+bodyGroup.visible = false;
+bodyScene.add(bodyGroup);
+
+function makeCapsule(radius, height) {
+    const mesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(radius, height, 4, 8),
+        bodyMat
+    );
+    mesh.userData.baseH = height + 2 * radius;
+    mesh.visible = false;
+    bodyGroup.add(mesh);
+    return mesh;
+}
+function makeSphere(radius, mat) {
+    const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 12, 8),
+        mat || bodyMat
+    );
+    mesh.visible = false;
+    bodyGroup.add(mesh);
+    return mesh;
+}
+
+// 13 capsules + 1 sphere (head) + joint spheres
+const bodyParts = {
+    head:      makeSphere(0.09),
+    neck:      makeCapsule(0.04, 0.06),
+    torso:     makeCapsule(0.11, 0.25),
+    lUpperArm: makeCapsule(0.035, 0.15),
+    rUpperArm: makeCapsule(0.035, 0.15),
+    lForearm:  makeCapsule(0.03, 0.13),
+    rForearm:  makeCapsule(0.03, 0.13),
+    lThigh:    makeCapsule(0.05, 0.20),
+    rThigh:    makeCapsule(0.05, 0.20),
+    lShin:     makeCapsule(0.035, 0.18),
+    rShin:     makeCapsule(0.035, 0.18),
+    lFoot:     makeCapsule(0.03, 0.08),
+    rFoot:     makeCapsule(0.03, 0.08),
+};
+const JOINT_INDICES = [11,12,13,14,15,16,23,24,25,26,27,28];
+const jointSpheres = JOINT_INDICES.map(() => makeSphere(0.018, jointMat));
+
+// Segment definitions: [partKey, landmarkA, landmarkB]
+const SEGMENTS = [
+    ['torso',     'shoulders_mid', 'hips_mid'],
+    ['neck',      'shoulders_mid', 'head_base'],
+    ['lUpperArm', 11, 13],
+    ['rUpperArm', 12, 14],
+    ['lForearm',  13, 15],
+    ['rForearm',  14, 16],
+    ['lThigh',    23, 25],
+    ['rThigh',    24, 26],
+    ['lShin',     25, 27],
+    ['rShin',     26, 28],
+    ['lFoot',     27, 31],
+    ['rFoot',     28, 32],
+];
+
+// ── body update logic ───────────────────────────────────────
+const _upVec = new THREE.Vector3(0, 1, 0);
+const BODY_SCALE = 2.2;
+const SMOOTH = 0.3;
+
+function lmToVec3(lm) {
+    return new THREE.Vector3(
+        (lm[0] - 0.5) * BODY_SCALE,
+        (0.5 - lm[1]) * BODY_SCALE,
+        -(lm[2] || 0) * 0.5
+    );
+}
+function mid2(a, b) {
+    return [(a[0]+b[0])/2, (a[1]+b[1])/2, ((a[2]||0)+(b[2]||0))/2];
+}
+
+function updateCapsule(mesh, lmA, lmB) {
+    const a = lmToVec3(lmA);
+    const b = lmToVec3(lmB);
+    const midP = a.clone().add(b).multiplyScalar(0.5);
+    const dir = b.clone().sub(a);
+    const len = dir.length();
+    if (len < 0.001) { mesh.visible = false; return; }
+    mesh.visible = true;
+    mesh.position.lerp(midP, SMOOTH);
+    mesh.scale.y = len / mesh.userData.baseH;
+    const quat = new THREE.Quaternion().setFromUnitVectors(_upVec, dir.normalize());
+    mesh.quaternion.slerp(quat, SMOOTH);
+}
+
+function updateBody(lms) {
+    if (!lms || lms.length < 33) { bodyGroup.visible = false; return; }
+    bodyGroup.visible = true;
+
+    // Derived points — use fallbacks if hips not visible
+    const shouldersOk = lms[11] && lms[12] && lms[11][2] > 0.05 && lms[12][2] > 0.05;
+    const hipsOk = lms[23] && lms[24] && lms[23][2] > 0.05 && lms[24][2] > 0.05;
+
+    const sMid = shouldersOk ? mid2(lms[11], lms[12]) : null;
+    const hMid = hipsOk ? mid2(lms[23], lms[24]) : null;
+    const headBase = sMid ? [sMid[0], sMid[1] - 0.04, sMid[2]] : null;
+    const derived = { shoulders_mid: sMid, hips_mid: hMid, head_base: headBase };
+
+    // Each segment independently decides visibility
+    let anyVisible = false;
+    SEGMENTS.forEach(([part, idxA, idxB]) => {
+        const lmA = typeof idxA === 'string' ? derived[idxA] : lms[idxA];
+        const lmB = typeof idxB === 'string' ? derived[idxB] : lms[idxB];
+        if (!lmA || !lmB) { bodyParts[part].visible = false; return; }
+        const visA = typeof idxA === 'string' ? 1 : (lmA[2] || 0);
+        const visB = typeof idxB === 'string' ? 1 : (lmB[2] || 0);
+        if (visA < 0.05 || visB < 0.05) { bodyParts[part].visible = false; return; }
+        updateCapsule(bodyParts[part], lmA, lmB);
+        anyVisible = true;
+    });
+
+    // Head sphere — show if nose or shoulders visible
+    if (headBase) {
+        const headPos = lmToVec3(headBase);
+        headPos.y += 0.1;
+        if (lms[0] && lms[0][2] > 0.05) {
+            const noseP = lmToVec3(lms[0]);
+            headPos.x = noseP.x;
+            headPos.y = noseP.y + 0.05;
+        }
+        bodyParts.head.visible = true;
+        bodyParts.head.position.lerp(headPos, SMOOTH);
+        anyVisible = true;
+    } else {
+        bodyParts.head.visible = false;
+    }
+
+    // Joint spheres
+    JOINT_INDICES.forEach((idx, i) => {
+        if (lms[idx] && lms[idx][2] > 0.05) {
+            jointSpheres[i].visible = true;
+            jointSpheres[i].position.lerp(lmToVec3(lms[idx]), SMOOTH);
+            anyVisible = true;
+        } else {
+            jointSpheres[i].visible = false;
+        }
+    });
+
+    if (!anyVisible) bodyGroup.visible = false;
+}
+
+// ── estimated landmarks from bbox (fallback without MediaPipe) ──
+function estimateLandmarksFromBbox(det) {
+    const bx = det.bbox.x, by = det.bbox.y;
+    const bw = det.bbox.w, bh = det.bbox.h;
+    const cx_ = bx + bw/2;
+    const lms = new Array(33).fill(null).map(() => [0, 0, 0.5]);
+    lms[0]  = [cx_, by+bh*0.06, 0.8];
+    lms[7]  = [cx_-bw*0.06, by+bh*0.05, 0.7];
+    lms[8]  = [cx_+bw*0.06, by+bh*0.05, 0.7];
+    lms[11] = [cx_-bw*0.28, by+bh*0.19, 0.8];
+    lms[12] = [cx_+bw*0.28, by+bh*0.19, 0.8];
+    lms[13] = [cx_-bw*0.33, by+bh*0.38, 0.7];
+    lms[14] = [cx_+bw*0.33, by+bh*0.38, 0.7];
+    lms[15] = [cx_-bw*0.36, by+bh*0.54, 0.6];
+    lms[16] = [cx_+bw*0.36, by+bh*0.54, 0.6];
+    lms[23] = [cx_-bw*0.14, by+bh*0.56, 0.8];
+    lms[24] = [cx_+bw*0.14, by+bh*0.56, 0.8];
+    lms[25] = [cx_-bw*0.16, by+bh*0.74, 0.7];
+    lms[26] = [cx_+bw*0.16, by+bh*0.74, 0.7];
+    lms[27] = [cx_-bw*0.18, by+bh*0.92, 0.6];
+    lms[28] = [cx_+bw*0.18, by+bh*0.92, 0.6];
+    lms[31] = [cx_-bw*0.19, by+bh*0.96, 0.5];
+    lms[32] = [cx_+bw*0.19, by+bh*0.96, 0.5];
+    return lms;
+}
+
+// ── simulated landmarks for keyboard testing (press 1/2) ────
+function simulateLandmarks(idx, t) {
+    const ox = idx === 0 ? 0 : (idx === 1 ? -0.14 : 0.14);
+    const sw = Math.sin(t * 1.3 + idx * 2.5);
+    const lms = new Array(33).fill(null).map(() => [0, 0, 0.5]);
+    lms[0]  = [0.50+ox+sw*0.008, 0.13, 0.9];
+    lms[7]  = [0.47+ox, 0.12, 0.7];
+    lms[8]  = [0.53+ox, 0.12, 0.7];
+    lms[11] = [0.42+ox+sw*0.004, 0.25, 0.9];
+    lms[12] = [0.58+ox-sw*0.004, 0.25, 0.9];
+    lms[13] = [0.36+ox+sw*0.018, 0.40, 0.8];
+    lms[14] = [0.64+ox-sw*0.018, 0.40, 0.8];
+    lms[15] = [0.34+ox+sw*0.022, 0.53, 0.7];
+    lms[16] = [0.66+ox-sw*0.022, 0.53, 0.7];
+    lms[23] = [0.44+ox, 0.55, 0.9];
+    lms[24] = [0.56+ox, 0.55, 0.9];
+    lms[25] = [0.43+ox+sw*0.008, 0.71, 0.8];
+    lms[26] = [0.57+ox-sw*0.008, 0.71, 0.8];
+    lms[27] = [0.42+ox+sw*0.012, 0.87, 0.7];
+    lms[28] = [0.58+ox-sw*0.012, 0.87, 0.7];
+    lms[31] = [0.42+ox+sw*0.012, 0.91, 0.6];
+    lms[32] = [0.58+ox-sw*0.012, 0.91, 0.6];
+    return lms;
+}
+
+// ── body scene update per frame ─────────────────────────────
+function updateBodyScene(t) {
+    if (nPersons === 0) { bodyGroup.visible = false; return; }
+    if (landmarks && landmarks.length > 0) {
+        updateBody(landmarks);
+    } else if (detections.length > 0) {
+        updateBody(estimateLandmarksFromBbox(detections[0]));
+    } else {
+        updateBody(simulateLandmarks(0, t));
+    }
+}
+
+// ── websocket ──────────────────────────────────────────────
+function connectWS() {
+    try {
+        const ws = new WebSocket('ws://' + location.host + '/ws');
+        ws.onmessage = e => {
+            const d = JSON.parse(e.data);
+            if (kbOverride) return;  // keyboard simulation active, ignore server
+            state = d.state;
+            nPersons = d.person_count ?? (d.person_present ? 1 : 0);
+            if (d.detections) detections = d.detections;
+            if (d.landmarks !== undefined) landmarks = d.landmarks;
+            updateUI();
+        };
+        ws.onopen = () => { connEl.textContent='live'; connEl.className='conn conn-live'; };
+        ws.onclose = () => { connEl.textContent='offline'; connEl.className='conn conn-off'; setTimeout(connectWS,3000); };
+        ws.onerror = () => {};
+    } catch(e) {}
+}
+const connEl = document.getElementById('connStatus');
+connectWS();
+
+function updateUI() {
+    document.getElementById('personCount').textContent = nPersons;
+    document.getElementById('personCount').className = 'pcnt'+(nPersons>0?' on':'');
+    document.getElementById('statusDot').className = 'sdot dot-'+state;
+    document.getElementById('statusText').textContent = state;
+    document.getElementById('stateLabel').textContent = state;
+}
+
+let kbOverride = false;  // keyboard overrides server data
+document.addEventListener('keydown', e => {
+    if (e.key>='0' && e.key<='9') {
+        nPersons = +e.key;
+        detections = []; landmarks = null;
+        kbOverride = (nPersons > 0);  // lock simulation until 0 pressed
+        if (nPersons===0) state='spinning';
+        else if (nPersons===1) state='teasing';
+        else if (state!=='pursuit'&&state!=='assembled') { state='pursuit'; pursuitT=0; }
+        updateUI();
+    }
+});
+
+// ── three.js ───────────────────────────────────────────────
+const container = document.getElementById('threeContainer');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080808);
+
+const cam = new THREE.PerspectiveCamera(65, 1, 0.1, 100);
+// Blender Camera_Front (0,-5.5,-0.5) → Three.js Y-up (0,-0.5,5.5)
+cam.position.set(0, -0.5, 5.5);
+cam.lookAt(0, 0, 0);
+
+const ren = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+ren.toneMapping = THREE.ACESFilmicToneMapping;
+ren.toneMappingExposure = 1.2;
+container.appendChild(ren.domElement);
+
+// Only supplement GLB lights — 5 spots are IN the GLB already
+// 2 area lights (Back_Light, Ceiling_Light) can't export to GLB → add as point lights
+scene.add(new THREE.AmbientLight(0xffeedd, 0.4));
+// Ceiling_Light: Blender (0,0,4.9) → Three.js (0,4.9,0), energy≈100
+const ceilPt = new THREE.PointLight(0xfff0dd, 80, 30);
+ceilPt.position.set(0, 4.9, 0);
+scene.add(ceilPt);
+// Back_Light: Blender (0,0.4,0) → Three.js (0,0,-0.4), energy≈80
+const backPt = new THREE.PointLight(0xffeebb, 60, 25);
+backPt.position.set(0, 0, -0.4);
+scene.add(backPt);
+
+// ── load GLB ───────────────────────────────────────────────
+const loader = new GLTFLoader();
+const PI2 = Math.PI * 2;
+
+loader.load('/static/vitrazh_scene.glb', gltf => {
+    const model = gltf.scene;
+    scene.add(model);
+
+    const meshStats = {vitrazh: 0, rod: 0, deco: 0, room: 0, other: 0};
+    model.traverse(c => {
+        if (!c.isMesh) return;
+        const n = c.name.toLowerCase();
+        if (n.includes('vitrazh')) meshStats.vitrazh++;
+        else if (n.includes('rod') || n.includes('cylinder')) meshStats.rod++;
+        else if (n.includes('deco')) meshStats.deco++;
+        else if (n.includes('gallery') || n.includes('room') || n.includes('cube')) meshStats.room++;
+        else meshStats.other++;
+    });
+    console.log('Mesh stats:', meshStats);
+
+    // Make all objects visible, but only override materials on vitrazh/deco (not room)
+    model.traverse(child => {
+        if (child.isMesh) {
+            child.frustumCulled = false;
+            child.visible = true;
+            const n = child.name.toLowerCase();
+            const isPanel = n.includes('vitrazh') || n.includes('deco');
+            if (child.material) {
+                child.material.depthWrite = true;
+                child.material.depthTest = true;
+                if (isPanel) {
+                    child.material.side = THREE.DoubleSide;
+                    child.material.transparent = false;
+                    child.material.opacity = 1.0;
+                } else {
+                    // Room/rods: keep original materials, just ensure DoubleSide
+                    child.material.side = THREE.DoubleSide;
+                }
+            }
+        }
+    });
+
+    // Find vitrazh panels
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const n = child.name.toLowerCase();
+        if (!n.includes('vitrazh')) return;
+
+        child.geometry.computeBoundingBox();
+        const bb = child.geometry.boundingBox;
+        const sz = new THREE.Vector3();
+        bb.getSize(sz);
+        if (Math.max(sz.x, sz.y, sz.z) > 1.5) return;
+
+        vitrazPanels.push({
+            mesh: child,
+            origQuat: child.quaternion.clone(),
+            currentAngle: Math.random() * PI2,  // start at random angle
+            baseSpeed: 0.3 + Math.random() * 1.7,  // 0.3 – 2.0 rad/s
+            direction: Math.random() > 0.5 ? 1 : -1,
+            speed: 0,
+            phase: Math.random() * PI2,
+        });
+
+        if (child.material && child.material.emissive) {
+            child.material.emissiveIntensity = Math.max(child.material.emissiveIntensity, 1.5);
+        }
+    });
+
+    document.getElementById('panelInfo').textContent = vitrazPanels.length + ' panels';
+    console.log('Vitrazh panels found:', vitrazPanels.length);
+
+    console.log('Room meshes from GLB:', meshStats.room);
+
+}, undefined, err => {
+    console.error('GLB failed:', err);
+    document.getElementById('panelInfo').textContent = 'fallback';
+    createFallbackPanels();
+});
+
+function createFallbackPanels() {
+    const COLS=7,ROWS=9,SZ=0.36,GAP=0.46;
+    const PAL=[[0x5b2c8a,0x3d1a6e,0x1f5f8b,0x1a5276,0x1f5f8b,0x3d1a6e,0x5b2c8a],[0x3d1a6e,0x2471a3,0x117a65,0xb8860b,0x117a65,0x2471a3,0x3d1a6e],[0x1f5f8b,0x117a65,0x1e8449,0xc9a30a,0x1e8449,0x117a65,0x1f5f8b],[0x1a5276,0xb8860b,0x9a7d0a,0x922b21,0x9a7d0a,0xb8860b,0x1a5276],[0x5b2c8a,0xc9a30a,0xa93226,0xc0392b,0xa93226,0xc9a30a,0x5b2c8a],[0x1a5276,0xb8860b,0x9a7d0a,0x922b21,0x9a7d0a,0xb8860b,0x1a5276],[0x1f5f8b,0x117a65,0x1e8449,0xc9a30a,0x1e8449,0x117a65,0x1f5f8b],[0x3d1a6e,0x2471a3,0x117a65,0xb8860b,0x117a65,0x2471a3,0x3d1a6e],[0x5b2c8a,0x3d1a6e,0x1f5f8b,0x1a5276,0x1f5f8b,0x3d1a6e,0x5b2c8a]];
+    const geo=new THREE.PlaneGeometry(SZ,SZ);
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+        const col=new THREE.Color(PAL[r][c]);
+        const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.8,roughness:0.25,side:THREE.DoubleSide});
+        const m=new THREE.Mesh(geo,mat);
+        m.position.set((c-3)*GAP,(4-r)*GAP,0);
+        scene.add(m);
+        vitrazPanels.push({
+            mesh:m, origQuat:m.quaternion.clone(),
+            currentAngle: Math.random()*PI2,
+            baseSpeed: 0.3+Math.random()*1.7,
+            direction: Math.random()>.5?1:-1,
+            speed: 0,
+            phase: Math.random()*PI2,
+        });
+    }
+}
+
+// ── panel animation — "Contra Solitudinem" ─────────────────
+const _q = new THREE.Quaternion();
+const _axis = new THREE.Vector3(0, 1, 0);
+
+function animPanels(dt, t) {
+    if (vitrazPanels.length === 0) return;
+
+    vitrazPanels.forEach(p => {
+        switch (state) {
+            case 'spinning':
+                // Default: continuous rotation, each panel at own speed
+                p.currentAngle += p.baseSpeed * p.direction * dt;
+                break;
+
+            case 'teasing': {
+                // Some panels slow toward correct angle, then drift away
+                // "tease wave" — never more than ~30% correct at once
+                const teasePhase = Math.sin(t * 0.4 + p.phase * 3);
+                if (teasePhase > 0.6) {
+                    // Slow toward nearest correct angle (multiple of 2π)
+                    p.speed = lerp(p.speed, 0.1, 0.02);
+                    const nearest = Math.round(p.currentAngle / PI2) * PI2;
+                    p.currentAngle = lerp(p.currentAngle, nearest, 0.01);
+                } else {
+                    // Resume spinning
+                    p.speed = lerp(p.speed, p.baseSpeed, 0.05);
+                    p.currentAngle += p.speed * p.direction * dt;
+                }
+                break;
+            }
+
+            case 'pursuit': {
+                // Faster, chaotic rotation
+                pursuitT += dt / vitrazPanels.length;
+                const chaos = 1.0 + Math.sin(t * 2 + p.phase) * 0.5;
+                p.currentAngle += p.baseSpeed * p.direction * chaos * 1.5 * dt;
+                break;
+            }
+
+            case 'assembling':
+            case 'assembled': {
+                // Decelerate to nearest multiple of 2π (correct orientation)
+                const target = Math.round(p.currentAngle / PI2) * PI2;
+                p.currentAngle = lerp(p.currentAngle, target, 3.0 * dt);
+                break;
+            }
+        }
+
+        // Apply rotation
+        _q.setFromAxisAngle(_axis, p.currentAngle);
+        p.mesh.quaternion.copy(p.origQuat).premultiply(_q);
+    });
+
+    // Timer display
+    const el = document.getElementById('timer');
+    if (state === 'pursuit') {
+        el.textContent = Math.max(0, PURSUIT_DUR - pursuitT).toFixed(1) + 's';
+        el.classList.add('on');
+    } else {
+        if (state !== 'pursuit') pursuitT = 0;
+        el.textContent = '';
+        el.classList.remove('on');
+    }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// ── resize ─────────────────────────────────────────────────
+function onResize() {
+    const rp=document.getElementById('rightPanel');
+    const lp=document.getElementById('leftPanel');
+    cam.aspect=rp.clientWidth/rp.clientHeight;
+    cam.updateProjectionMatrix();
+    ren.setSize(rp.clientWidth,rp.clientHeight);
+    bodyCam.aspect=lp.clientWidth/lp.clientHeight;
+    bodyCam.updateProjectionMatrix();
+    bodyRen.setSize(lp.clientWidth,lp.clientHeight);
+}
+window.addEventListener('resize',onResize);
+onResize();
+
+// ── loop ───────────────────────────────────────────────────
+let prev=performance.now();
+(function loop(){
+    requestAnimationFrame(loop);
+    const now=performance.now();
+    const dt=Math.min((now-prev)/1000,0.1);
+    prev=now;
+    const t=now/1000;
+    updateBodyScene(t);
+    bodyRen.render(bodyScene,bodyCam);
+    animPanels(dt,t);
+    ren.render(scene,cam);
+})();
+
+</script>
+</body>
+</html>
