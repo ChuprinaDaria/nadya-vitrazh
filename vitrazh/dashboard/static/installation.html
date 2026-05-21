@@ -573,9 +573,12 @@ function animPanels(dt, t) {
             case 'spinning':
                 // Default: continuous rotation, each panel at own speed
                 p.currentAngle += p.baseSpeed * p.direction * dt;
+                p._assembleTarget = null;
                 break;
 
-            case 'teasing': {
+            case 'teasing':
+                p._assembleTarget = null;
+            {
                 // Some panels slow toward correct angle, then drift away
                 // "tease wave" — never more than ~30% correct at once
                 const teasePhase = Math.sin(t * 0.4 + p.phase * 3);
@@ -592,7 +595,9 @@ function animPanels(dt, t) {
                 break;
             }
 
-            case 'pursuit': {
+            case 'pursuit':
+                p._assembleTarget = null;
+            {
                 // Faster, chaotic rotation
                 pursuitT += dt / vitrazPanels.length;
                 const chaos = 1.0 + Math.sin(t * 2 + p.phase) * 0.5;
@@ -602,9 +607,16 @@ function animPanels(dt, t) {
 
             case 'assembling':
             case 'assembled': {
-                // Decelerate to nearest multiple of 2π (correct orientation)
-                const target = Math.round(p.currentAngle / PI2) * PI2;
-                p.currentAngle = lerp(p.currentAngle, target, 3.0 * dt);
+                if (p._assembleTarget == null) {
+                    // Target: one extra rotation in spin direction, land face-forward
+                    p._assembleTarget = Math.round((p.currentAngle + p.direction * PI2) / PI2) * PI2;
+                }
+                const diff = p._assembleTarget - p.currentAngle;
+                if (Math.abs(diff) < 0.01) {
+                    p.currentAngle = p._assembleTarget;
+                } else {
+                    p.currentAngle = lerp(p.currentAngle, p._assembleTarget, 5.0 * dt);
+                }
                 break;
             }
         }

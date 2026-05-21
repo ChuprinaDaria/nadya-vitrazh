@@ -61,6 +61,7 @@ class StateMachine:
         self._absence_t = None
         self._pursuit_t = None
         self._photo_t = None
+        self._assembled_t = None
 
     def update(self, n_persons, pose="idle"):
         now = time.monotonic()
@@ -96,19 +97,24 @@ class StateMachine:
 
         elif self.state == "assembling":
             self.state = "assembled"
+            self._assembled_t = now
 
         elif self.state == "assembled":
-            if n_persons < 2:
-                self.state = "teasing"
-            elif pose == "photographing":
-                if self._photo_t is None:
-                    self._photo_t = now
-                elif now - self._photo_t > 1.5:
-                    self.state = "pursuit"
-                    self._pursuit_t = now
+            if pose == "hands_up":
+                self._assembled_t = now  # keep assembled while hands up
+            elif n_persons >= 2:
+                self._assembled_t = now  # keep assembled with 2+ people
+                if pose == "photographing":
+                    if self._photo_t is None:
+                        self._photo_t = now
+                    elif now - self._photo_t > 1.5:
+                        self.state = "pursuit"
+                        self._pursuit_t = now
+                        self._photo_t = None
+                else:
                     self._photo_t = None
-            else:
-                self._photo_t = None
+            elif self._assembled_t and now - self._assembled_t > 5.0:
+                self.state = "teasing"  # 5 sec after hands down → teasing
 
         return self.state
 
