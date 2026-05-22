@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent.parent / "vitrazh" / "dashboard" / "static"
 
-STATES = ["rotating", "assembling", "assembled", "disassembling"]
 POSES = ["idle", "photographing", "phone_viewing"]
 
 
@@ -36,10 +35,13 @@ def create_app() -> FastAPI:
     loop: asyncio.AbstractEventLoop | None = None
 
     current = {
-        "state": "rotating",
+        "state": "spinning",
         "pose": "idle",
+        "person_count": 0,
         "person_present": False,
         "mode": "prototype",
+        "detections": [],
+        "landmarks": None,
     }
 
     def simulation_loop() -> None:
@@ -47,46 +49,75 @@ def create_app() -> FastAPI:
         while True:
             time.sleep(random.uniform(3, 6))
 
-            # Random scenario
             roll = random.random()
-            if current["state"] == "rotating":
+            if current["state"] == "spinning":
                 if roll < 0.5:
-                    # Person approaches
+                    # 1 person approaches → teasing
+                    current["person_count"] = 1
                     current["person_present"] = True
+                    current["state"] = "teasing"
                     current["pose"] = "idle"
                     broadcast(current)
-                    time.sleep(2.0)
+                    time.sleep(random.uniform(3, 6))
+                    if random.random() < 0.6:
+                        # Friend joins → pursuit
+                        current["person_count"] = 2
+                        current["state"] = "pursuit"
+                        broadcast(current)
+                        time.sleep(3.0)
+                        current["state"] = "assembling"
+                        broadcast(current)
+                        time.sleep(0.3)
+                        current["state"] = "assembled"
+                        broadcast(current)
+
+            elif current["state"] == "teasing":
+                if roll < 0.4:
+                    # Person leaves → spinning
+                    current["person_count"] = 0
+                    current["person_present"] = False
+                    current["state"] = "spinning"
+                    current["pose"] = "idle"
+                    broadcast(current)
+                elif roll < 0.8:
+                    # Friend joins → pursuit
+                    current["person_count"] = 2
+                    current["state"] = "pursuit"
+                    broadcast(current)
+                    time.sleep(3.0)
                     current["state"] = "assembling"
                     broadcast(current)
                     time.sleep(0.3)
                     current["state"] = "assembled"
                     broadcast(current)
+
             elif current["state"] == "assembled":
                 if roll < 0.3:
-                    # Person leaves
-                    current["person_present"] = False
+                    # Friend leaves → teasing
+                    current["person_count"] = 1
+                    current["state"] = "teasing"
                     current["pose"] = "idle"
                     broadcast(current)
-                    time.sleep(3.0)
-                    current["state"] = "disassembling"
+                elif roll < 0.5:
+                    # Everyone leaves → spinning
+                    current["person_count"] = 0
+                    current["person_present"] = False
+                    current["state"] = "spinning"
+                    current["pose"] = "idle"
                     broadcast(current)
-                    time.sleep(0.3)
-                    current["state"] = "rotating"
-                    broadcast(current)
-                elif roll < 0.6:
-                    # Person takes photo
+                elif roll < 0.7:
+                    # Photo pose → pursuit restart
                     current["pose"] = random.choice(["photographing", "phone_viewing"])
+                    current["state"] = "pursuit"
                     broadcast(current)
-                    time.sleep(2.0)
-                    current["state"] = "disassembling"
+                    time.sleep(3.0)
+                    current["state"] = "assembling"
                     broadcast(current)
                     time.sleep(0.3)
-                    current["state"] = "rotating"
-                    current["person_present"] = True
+                    current["state"] = "assembled"
                     current["pose"] = "idle"
                     broadcast(current)
                 else:
-                    # Person just stands
                     current["pose"] = "idle"
                     broadcast(current)
 
@@ -116,6 +147,10 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/installation", response_class=HTMLResponse)
+    async def installation() -> FileResponse:
+        return FileResponse(STATIC_DIR / "installation.html")
 
     @app.get("/api/state")
     async def get_state() -> dict:

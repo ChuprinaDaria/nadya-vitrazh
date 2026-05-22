@@ -14,10 +14,11 @@ class PoseClass(str, enum.Enum):
 
 
 class InstallationState(str, enum.Enum):
-    ROTATING = "rotating"
+    SPINNING = "spinning"
+    TEASING = "teasing"
+    PURSUIT = "pursuit"
     ASSEMBLING = "assembling"
     ASSEMBLED = "assembled"
-    DISASSEMBLING = "disassembling"
 
 
 @dataclass(frozen=True)
@@ -70,8 +71,8 @@ class ClassifierConfig(BaseModel):
 
 
 class StateMachineConfig(BaseModel):
-    presence_delay: float = 2.0
     absence_delay: float = 3.0
+    pursuit_duration: float = 30.0
     photo_resume_delay: float = 1.5
 
 

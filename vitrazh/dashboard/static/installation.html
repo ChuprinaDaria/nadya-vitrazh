@@ -131,6 +131,7 @@ body{background:#050505;color:#999;font-family:'SF Mono','Fira Code',Consolas,mo
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ── state ──────────────────────────────────────────────────
 let state = 'spinning', nPersons = 0, pursuitT = 0;
@@ -437,16 +438,22 @@ const container = document.getElementById('threeContainer');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x080808);
 
-const cam = new THREE.PerspectiveCamera(65, 1, 0.1, 100);
-// Blender Camera_Front (0,-5.5,-0.5) → Three.js Y-up (0,-0.5,5.5)
-cam.position.set(0, -0.5, 5.5);
-cam.lookAt(0, 0, 0);
+const cam = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+cam.position.set(0, 1.2, 6.5);
 
 const ren = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 ren.toneMapping = THREE.ACESFilmicToneMapping;
 ren.toneMappingExposure = 1.2;
 container.appendChild(ren.domElement);
+
+const controls = new OrbitControls(cam, ren.domElement);
+controls.target.set(0, 0.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 15;
+controls.maxPolarAngle = Math.PI * 0.85;
 
 // Only supplement GLB lights — 5 spots are IN the GLB already
 // 2 area lights (Back_Light, Ceiling_Light) can't export to GLB → add as point lights
@@ -608,14 +615,21 @@ function animPanels(dt, t) {
             case 'assembling':
             case 'assembled': {
                 if (p._assembleTarget == null) {
-                    // Target: one extra rotation in spin direction, land face-forward
-                    p._assembleTarget = Math.round((p.currentAngle + p.direction * PI2) / PI2) * PI2;
+                    // Target: next frontal position (2π*n) + 1 extra spin in current direction
+                    if (p.direction > 0) {
+                        p._assembleTarget = (Math.ceil(p.currentAngle / PI2) + 1) * PI2;
+                    } else {
+                        p._assembleTarget = (Math.floor(p.currentAngle / PI2) - 1) * PI2;
+                    }
                 }
                 const diff = p._assembleTarget - p.currentAngle;
-                if (Math.abs(diff) < 0.01) {
+                if (Math.abs(diff) < 0.005) {
                     p.currentAngle = p._assembleTarget;
                 } else {
-                    p.currentAngle = lerp(p.currentAngle, p._assembleTarget, 5.0 * dt);
+                    // Smooth convergence with minimum speed to avoid stalling
+                    const step = diff * 6.0 * dt;
+                    const minStep = Math.sign(diff) * 0.3 * dt;
+                    p.currentAngle += Math.abs(step) > Math.abs(minStep) ? step : minStep;
                 }
                 break;
             }
@@ -662,9 +676,18 @@ let prev=performance.now();
     const dt=Math.min((now-prev)/1000,0.1);
     prev=now;
     const t=now/1000;
+    // Auto-progress pursuit → assembling → assembled in keyboard mode
+    if (kbOverride) {
+        if (state === 'pursuit' && pursuitT >= 5) {
+            state = 'assembling'; updateUI();
+        } else if (state === 'assembling' && pursuitT >= 5.3) {
+            state = 'assembled'; updateUI();
+        }
+    }
     updateBodyScene(t);
     bodyRen.render(bodyScene,bodyCam);
     animPanels(dt,t);
+    controls.update();
     ren.render(scene,cam);
 })();
 

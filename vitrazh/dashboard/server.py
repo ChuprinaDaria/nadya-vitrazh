@@ -25,14 +25,33 @@ def create_app(config: Config) -> FastAPI:
     clients: list[WebSocket] = []
     loop: asyncio.AbstractEventLoop | None = None
 
-    motor_mode = config.motor.type  # "mock" = prototype, "gpio"/"serial" = production
+    motor_mode = config.motor.type
 
-    def on_update(state: InstallationState, pose: PoseClass, person_present: bool) -> None:
+    def on_update(state: InstallationState, pose: PoseClass, person_count: int) -> None:
+        # Serialize detections for the browser skeleton canvas
+        dets_raw = pipeline.last_detections or []
+        dets_json = [
+            {
+                "bbox": {"x": d.bbox.x, "y": d.bbox.y, "w": d.bbox.w, "h": d.bbox.h},
+                "tracking_id": d.tracking_id,
+                "confidence": d.confidence,
+            }
+            for d in dets_raw
+        ]
+        lms_raw = pipeline.last_landmarks
+        lms_json = (
+            [[lm.x, lm.y, lm.visibility] for lm in lms_raw]
+            if lms_raw
+            else None
+        )
         msg = json.dumps({
             "state": state.value,
             "pose": pose.value,
-            "person_present": person_present,
+            "person_count": person_count,
+            "person_present": person_count > 0,
             "mode": "prototype" if motor_mode == "mock" else "production",
+            "detections": dets_json,
+            "landmarks": lms_json,
         })
         if loop is not None:
             asyncio.run_coroutine_threadsafe(_broadcast(msg), loop)
@@ -64,6 +83,10 @@ def create_app(config: Config) -> FastAPI:
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.get("/installation", response_class=HTMLResponse)
+    async def installation() -> FileResponse:
+        return FileResponse(STATIC_DIR / "installation.html")
+
     @app.get("/api/state")
     async def get_state() -> dict:
         return {"state": pipeline.state.value}
@@ -73,12 +96,30 @@ def create_app(config: Config) -> FastAPI:
         await ws.accept()
         clients.append(ws)
         try:
-            # Send current state immediately
+            dets_raw = pipeline.last_detections or []
+            dets_init = [
+                {
+                    "bbox": {"x": d.bbox.x, "y": d.bbox.y, "w": d.bbox.w, "h": d.bbox.h},
+                    "tracking_id": d.tracking_id,
+                    "confidence": d.confidence,
+                }
+                for d in dets_raw
+            ]
+            lms_raw = pipeline.last_landmarks
+            lms_init = (
+                [[lm.x, lm.y, lm.visibility] for lm in lms_raw]
+                if lms_raw
+                else None
+            )
+            pc = len(dets_raw)
             await ws.send_text(json.dumps({
                 "state": pipeline.state.value,
                 "pose": "idle",
-                "person_present": False,
+                "person_count": pc,
+                "person_present": pc > 0,
                 "mode": "prototype" if motor_mode == "mock" else "production",
+                "detections": dets_init,
+                "landmarks": lms_init,
             }))
             while True:
                 await ws.receive_text()

@@ -88,6 +88,7 @@ class PoseClassifier:
             min_tracking_confidence=min_tracking_confidence,
         )
         self._landmarker = _vision.PoseLandmarker.create_from_options(options)
+        self._last_landmarks: list[Landmark] | None = None
 
     def _get_landmarks(self, frame: NDArray[np.uint8]) -> list[Landmark] | None:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if frame.shape[2] == 3 else frame
@@ -100,6 +101,10 @@ class PoseClassifier:
             for lm in result.pose_landmarks[0]
         ]
 
+    @property
+    def last_landmarks(self) -> list[Landmark] | None:
+        return self._last_landmarks
+
     def classify(self, frame: NDArray[np.uint8]) -> tuple[PoseClass, float]:
         """Classify the pose of the nearest person in the frame.
 
@@ -107,6 +112,7 @@ class PoseClassifier:
             (pose_class, confidence) where confidence is 0.0-1.0
         """
         landmarks = self._get_landmarks(frame)
+        self._last_landmarks = landmarks
         if landmarks is None:
             return PoseClass.IDLE, 0.0
 

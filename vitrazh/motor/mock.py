@@ -11,7 +11,7 @@ class MockMotorController:
     """Mock motor controller for development without hardware."""
 
     def __init__(self) -> None:
-        self._state = InstallationState.ROTATING
+        self._state = InstallationState.SPINNING
         logger.info("MockMotorController initialized (no real hardware)")
 
     def set_state(self, state: InstallationState) -> None:
