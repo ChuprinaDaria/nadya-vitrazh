@@ -521,9 +521,17 @@ loader.load('/static/vitrazh_scene.glb', gltf => {
         bb.getSize(sz);
         if (Math.max(sz.x, sz.y, sz.z) > 1.5) return;
 
+        // Find face normal (thinnest local axis) → compute frontal angle
+        let localNormal = new THREE.Vector3(0, 0, 1);
+        if (sz.x < sz.y && sz.x < sz.z) localNormal.set(1, 0, 0);
+        else if (sz.y < sz.x && sz.y < sz.z) localNormal.set(0, 1, 0);
+        const worldNormal = localNormal.applyQuaternion(child.quaternion);
+        const frontalAngle = Math.atan2(-worldNormal.x, worldNormal.z);
+
         vitrazPanels.push({
             mesh: child,
             origQuat: child.quaternion.clone(),
+            frontalAngle: frontalAngle,
             currentAngle: Math.random() * PI2,  // start at random angle
             baseSpeed: 0.3 + Math.random() * 1.7,  // 0.3 – 2.0 rad/s
             direction: Math.random() > 0.5 ? 1 : -1,
@@ -559,6 +567,7 @@ function createFallbackPanels() {
         scene.add(m);
         vitrazPanels.push({
             mesh:m, origQuat:m.quaternion.clone(),
+            frontalAngle: 0,
             currentAngle: Math.random()*PI2,
             baseSpeed: 0.3+Math.random()*1.7,
             direction: Math.random()>.5?1:-1,
@@ -615,11 +624,14 @@ function animPanels(dt, t) {
             case 'assembling':
             case 'assembled': {
                 if (p._assembleTarget == null) {
-                    // Target: next frontal position (2π*n) + 1 extra spin in current direction
+                    // Target: frontalAngle + 2π*n — the angle where panel faces camera
+                    const fa = p.frontalAngle;
                     if (p.direction > 0) {
-                        p._assembleTarget = (Math.ceil(p.currentAngle / PI2) + 1) * PI2;
+                        const n = Math.ceil((p.currentAngle - fa) / PI2);
+                        p._assembleTarget = fa + (n + 1) * PI2;
                     } else {
-                        p._assembleTarget = (Math.floor(p.currentAngle / PI2) - 1) * PI2;
+                        const n = Math.floor((p.currentAngle - fa) / PI2);
+                        p._assembleTarget = fa + (n - 1) * PI2;
                     }
                 }
                 const diff = p._assembleTarget - p.currentAngle;
