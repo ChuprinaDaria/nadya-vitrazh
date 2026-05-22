@@ -445,6 +445,8 @@ const ren = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true}
 ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 ren.toneMapping = THREE.ACESFilmicToneMapping;
 ren.toneMappingExposure = 1.2;
+ren.shadowMap.enabled = true;
+ren.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(ren.domElement);
 
 const controls = new OrbitControls(cam, ren.domElement);
@@ -461,6 +463,11 @@ scene.add(new THREE.AmbientLight(0xffeedd, 0.4));
 // Ceiling_Light: Blender (0,0,4.9) → Three.js (0,4.9,0), energy≈100
 const ceilPt = new THREE.PointLight(0xfff0dd, 80, 30);
 ceilPt.position.set(0, 4.9, 0);
+ceilPt.castShadow = true;
+ceilPt.shadow.mapSize.width = 1024;
+ceilPt.shadow.mapSize.height = 1024;
+ceilPt.shadow.bias = -0.002;
+ceilPt.shadow.radius = 4;
 scene.add(ceilPt);
 // Back_Light: Blender (0,0.4,0) → Three.js (0,0,-0.4), energy≈80
 const backPt = new THREE.PointLight(0xffeebb, 60, 25);
@@ -487,13 +494,15 @@ loader.load('/static/vitrazh_scene.glb', gltf => {
     });
     console.log('Mesh stats:', meshStats);
 
-    // Make all objects visible, but only override materials on vitrazh/deco (not room)
+    // Make all objects visible, set shadow properties
     model.traverse(child => {
         if (child.isMesh) {
             child.frustumCulled = false;
             child.visible = true;
             const n = child.name.toLowerCase();
             const isPanel = n.includes('vitrazh') || n.includes('deco');
+            const isRoom = n.includes('gallery') || n.includes('room') || n.includes('cube');
+            const isRod = n.includes('rod') || n.includes('cylinder') || n.includes('mount');
             if (child.material) {
                 child.material.depthWrite = true;
                 child.material.depthTest = true;
@@ -502,10 +511,25 @@ loader.load('/static/vitrazh_scene.glb', gltf => {
                     child.material.transparent = false;
                     child.material.opacity = 1.0;
                 } else {
-                    // Room/rods: keep original materials, just ensure DoubleSide
                     child.material.side = THREE.DoubleSide;
                 }
             }
+            // Shadows: rods and panels cast, room receives
+            if (isRod || isPanel) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+            if (isRoom) {
+                child.receiveShadow = true;
+            }
+        }
+        // Enable shadows on GLB spot lights
+        if (child.isLight && child.isSpotLight) {
+            child.castShadow = true;
+            child.shadow.mapSize.width = 1024;
+            child.shadow.mapSize.height = 1024;
+            child.shadow.bias = -0.002;
+            child.shadow.radius = 3;
         }
     });
 
